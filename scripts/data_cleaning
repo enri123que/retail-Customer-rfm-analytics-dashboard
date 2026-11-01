@@ -1,0 +1,86 @@
+-- COUNT NUMBER OF ROWS IN TABLES / CONFIRM DATA LOADS CORRECT
+
+SELECT COUNT(*) FROM year_2009_10;
+SELECT COUNT(*) FROM year_2010_11;
+
+SELECT * FROM year_2010_11;
+
+-- CONVERT DATATYPE and COMBINE TABLE DATA
+
+SELECT Invoice,	StockCode, Description, Quantity,
+	
+	COALESCE(
+		TRY_CONVERT(datetime2, InvoiceDate, 120),
+		TRY_CONVERT(datetime2, InvoiceDate, 105)
+	) AS InvoiceDate,
+
+	TRY_CONVERT(decimal(10, 2), Price) AS Price,
+	Customer_ID, Country, '2009-2010' AS SourceSheet
+INTO dbo.RetailCombined
+FROM year_2009_10
+
+UNION ALL
+
+SELECT Invoice,	StockCode, Description, Quantity,
+	
+	COALESCE(
+		TRY_CONVERT(datetime2, InvoiceDate, 120),
+		TRY_CONVERT(datetime2, InvoiceDate, 105)
+	) AS InvoiceDate,
+
+	TRY_CONVERT(decimal(10, 2), Price) AS Price,
+	Customer_ID, Country , '2010-2011' AS SourceSheet
+FROM year_2010_11;
+
+-- VIEW TABLE RetailCombined
+
+SELECT * FROM RetailCombined;
+
+-- CONFIRM THE COVERSION WORKS CLEARLY
+SELECT COUNT(*) FROM RetailCombined;
+SELECT COUNT(*) FROM RetailCombined WHERE InvoiceDate IS NULL;
+SELECT COUNT(*) FROM RetailCombined WHERE Price IS NULL;
+
+-- CHECK TABLE SCHEMA
+SELECT COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'RetailCombined';
+
+-- CHECK 1 - MISSING CUSTOMER ID
+SELECT COUNT(Customer_ID) AS MISSING_CUSTOMER_ID FROM RetailCombined
+	WHERE Customer_ID IS NULL;
+
+-- CHECK 2 - ZERO and MISSING QUALITY
+SELECT COUNT(Quantity) AS ZERO_NEGATIVE_QUANTITY FROM RetailCombined
+	WHERE Quantity < 1 OR Quantity IS NULL;
+
+-- CHECK 3 - MISSING DESCRIPTION
+SELECT COUNT(Description) AS MISSING_DESCRIPTION FROM RetailCombined
+	WHERE Description IS NULL;
+
+-- CHECK 4 - EXACT DUPLICATE ROWS
+SELECT Invoice, StockCode, Description, Quantity, InvoiceDate, Price, Customer_ID, Country, COUNT(*) AS ExactDupCount 
+	FROM RetailCombined
+	GROUP BY Invoice, StockCode, Description, Quantity, InvoiceDate, Price, Customer_ID, Country
+	HAVING COUNT(*)> 1;
+
+
+
+-- Build NEW TABLE 'RetailCleaned' WITH CLEANED DATA
+
+WITH Deduped AS(
+	SELECT *,
+		ROW_NUMBER() OVER(
+			PARTITION BY Invoice, StockCode, Description, Quantity, InvoiceDate, Price, Customer_ID, Country
+			ORDER BY (SELECT NULL)
+		) AS RowNum
+		FROM RetailCombined
+)
+SELECT Invoice, StockCode, Description, Quantity, InvoiceDate, Price, Customer_ID, Country, SourceSheet
+	INTO dbo.RetailCleaned
+	FROM Deduped
+	WHERE RowNum = 1;
+
+-- VIEW DATA
+
+SELECT COUNT(*) FROM RetailCleaned;
